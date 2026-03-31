@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pong Gone Wrong</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="scanlines"></div>
+
+  <!-- ── LANDING ─────────────────────────────────────────────────────────── -->
+  <div id="view-landing" class="view active">
+    <div class="title-block">
+      <h1 class="game-title">PONG GONE<br><span class="accent">WRONG</span></h1>
+      <p class="subtitle">Multiplayer Polygon Pong</p>
+    </div>
+    <div class="landing-buttons">
+      <button type="button" class="btn btn-primary" id="btn-create">Create Room</button>
+      <button type="button" class="btn btn-secondary" id="btn-join-open">Join Room</button>
+    </div>
+  </div>
+
+  <!-- ── CREATE ROOM ──────────────────────────────────────────────────────── -->
+  <div id="view-create" class="view">
+    <h2 class="view-title">Create Room</h2>
+    <div class="form-group">
+      <label for="create-name">Your Name</label>
+      <input type="text" id="create-name" maxlength="20" placeholder="Enter display name" autocomplete="off" />
+    </div>
+    <div class="button-row">
+      <button type="button" class="btn btn-secondary" id="btn-create-back">Back</button>
+      <button type="button" class="btn btn-primary" id="btn-create-confirm">Create</button>
+    </div>
+  </div>
+
+  <!-- ── JOIN ROOM ────────────────────────────────────────────────────────── -->
+  <div id="view-join" class="view">
+    <h2 class="view-title">Join Room</h2>
+    <div class="form-group">
+      <label for="join-code">Room Code</label>
+      <input type="text" id="join-code" maxlength="6" placeholder="e.g. NX4R2" autocomplete="off" class="input-uppercase" />
+    </div>
+    <div class="form-group">
+      <label for="join-name">Your Name</label>
+      <input type="text" id="join-name" maxlength="20" placeholder="Enter display name" autocomplete="off" />
+    </div>
+    <div class="button-row">
+      <button type="button" class="btn btn-secondary" id="btn-join-back">Back</button>
+      <button type="button" class="btn btn-primary" id="btn-join-confirm">Join</button>
+    </div>
+  </div>
+
+  <!-- ── LOBBY ────────────────────────────────────────────────────────────── -->
+  <div id="view-lobby" class="view">
+    <h2 class="view-title">Lobby</h2>
+
+    <div class="room-code-block">
+      <span class="room-code-label">Room Code</span>
+      <div class="room-code-display">
+        <span id="lobby-code">-----</span>
+        <button type="button" class="btn-icon" id="btn-copy-code" title="Copy code">⧉</button>
+      </div>
+    </div>
+
+    <div class="lobby-columns">
+      <!-- Player list -->
+      <div class="lobby-section">
+        <h3>Players <span id="player-count">(1/6)</span></h3>
+        <ul id="player-list"></ul>
+      </div>
+
+      <!-- Config panel (host only) -->
+      <div class="lobby-section" id="config-panel">
+        <h3>Game Settings</h3>
+        <div class="config-grid">
+          <label for="cfg-points">Points to Win</label>
+          <select id="cfg-points" title="Points to Win">
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="10">10</option>
+            <option value="15">15</option>
+          </select>
+
+          <label for="cfg-speed">Ball Speed</label>
+          <select id="cfg-speed" title="Ball Speed">
+            <option value="Slow">Slow</option>
+            <option value="Normal" selected>Normal</option>
+            <option value="Fast">Fast</option>
+          </select>
+
+          <label for="cfg-paddle">Paddle Size</label>
+          <select id="cfg-paddle" title="Paddle Size">
+            <option value="Small">Small</option>
+            <option value="Normal" selected>Normal</option>
+            <option value="Large">Large</option>
+          </select>
+
+          <label for="cfg-modifiers">Modifiers</label>
+          <select id="cfg-modifiers" title="Modifiers">
+            <option value="true" selected>On</option>
+            <option value="false">Off</option>
+          </select>
+
+          <label for="cfg-freq">Modifier Frequency</label>
+          <select id="cfg-freq" title="Modifier Frequency">
+            <option value="Rare">Rare</option>
+            <option value="Normal" selected>Normal</option>
+            <option value="Frequent">Frequent</option>
+          </select>
+
+          <label for="cfg-multiball">Multi-Ball</label>
+          <select id="cfg-multiball" title="Multi-Ball">
+            <option value="false" selected>Off</option>
+            <option value="true">On</option>
+          </select>
+        </div>
+
+        <div class="modifier-picker-section" id="modifier-picker-section">
+          <div class="modifier-picker-header">
+            <span class="modifier-picker-label">Modifier Pool</span>
+            <button type="button" class="btn-text" id="btn-mod-all">All</button>
+            <button type="button" class="btn-text" id="btn-mod-none">None</button>
+          </div>
+          <div id="modifier-picker-grid"></div>
+        </div>
+      </div>
+
+      <!-- Config display (non-host) -->
+      <div class="lobby-section lobby-section--hidden" id="config-display">
+        <h3>Game Settings</h3>
+        <div id="config-display-text" class="config-readonly"></div>
+      </div>
+    </div>
+
+    <div class="lobby-footer">
+      <p id="waiting-msg" class="waiting-text">Waiting for players...</p>
+      <button type="button" class="btn btn-primary" id="btn-start" disabled>Start Game</button>
+    </div>
+  </div>
+
+  <!-- ── GAME ─────────────────────────────────────────────────────────────── -->
+  <div id="view-game" class="view">
+    <canvas id="game-canvas"></canvas>
+    <div id="modifier-banner" class="modifier-banner hidden"></div>
+    <div class="audio-controls">
+      <button type="button" class="audio-btn" id="btn-mute-music" title="Toggle Music">🎵</button>
+      <button type="button" class="audio-btn" id="btn-mute-sfx" title="Toggle SFX">🔊</button>
+    </div>
+  </div>
+
+  <!-- ── GAME OVER ────────────────────────────────────────────────────────── -->
+  <div id="view-gameover" class="view">
+    <div class="gameover-inner">
+      <div id="go-winner-label" class="go-winner-label">WINNER</div>
+      <div id="go-winner-name" class="go-winner-name"></div>
+      <div id="go-scores" class="go-scores"></div>
+      <button type="button" class="btn btn-primary" id="btn-play-again">Play Again</button>
+    </div>
+  </div>
+
+  <!-- ── ERROR TOAST ───────────────────────────────────────────────────────── -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
