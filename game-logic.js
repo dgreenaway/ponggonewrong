@@ -442,7 +442,7 @@ function stepBall(ball, state, events) {
           ball.vy = (spinVy / spinMag) * state.currentSpeed;
           ball.lastHitPlayer = side.playerIndex;
 
-          if (chaosActive) randomiseBallDirection(ball, state.currentSpeed);
+          if (chaosActive) chaosDirection(ball, state.currentSpeed, side.normal.x, side.normal.y);
 
           // Continue remaining motion in new direction
           ball.x += ball.vx * remainFrac;
@@ -459,7 +459,7 @@ function stepBall(ball, state, events) {
       const ref = reflect(ball.vx, ball.vy, side.normal.x, side.normal.y);
       ball.vx = ref.x;
       ball.vy = ref.y;
-      if (chaosActive) randomiseBallDirection(ball, state.currentSpeed);
+      if (chaosActive) chaosDirection(ball, state.currentSpeed, side.normal.x, side.normal.y);
 
       // Continue remaining motion in reflected direction
       ball.x += ball.vx * remainFrac;
@@ -473,10 +473,19 @@ function stepBall(ball, state, events) {
 }
 
 
-function randomiseBallDirection(ball, speed) {
+// Picks a random direction but guarantees the new direction faces INTO the
+// arena from the wall that was just hit (dot product with inward normal > 0).
+// Without this, chaos ball can fire the ball straight through a wall and off screen.
+function chaosDirection(ball, speed, nx, ny) {
   const angle = Math.random() * Math.PI * 2;
   ball.vx = Math.cos(angle) * speed;
   ball.vy = Math.sin(angle) * speed;
+  // If the random direction points outward, reflect it back across the wall normal
+  const dot = ball.vx * nx + ball.vy * ny;
+  if (dot < 0) {
+    ball.vx -= 2 * dot * nx;
+    ball.vy -= 2 * dot * ny;
+  }
 }
 
 function handleMiss(ball, state, playerIndex, playerId, events) {
