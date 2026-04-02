@@ -548,7 +548,7 @@ window.addEventListener('blur', () => {
 function sendPaddleInput() {
   const left = keysDown.has('ArrowLeft') || keysDown.has('a') || keysDown.has('A');
   const right = keysDown.has('ArrowRight') || keysDown.has('d') || keysDown.has('D');
-  const dir = right ? 1 : left ? -1 : 0;
+  const dir = right ? -1 : left ? 1 : 0;
   socket.emit('paddle_move', { direction: dir });
 }
 
