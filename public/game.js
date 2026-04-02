@@ -540,6 +540,10 @@ window.addEventListener('keyup', e => {
   keysDown.delete(e.key);
   sendPaddleInput();
 });
+window.addEventListener('blur', () => {
+  keysDown.clear();
+  sendPaddleInput();
+});
 
 function sendPaddleInput() {
   const left = keysDown.has('ArrowLeft') || keysDown.has('a') || keysDown.has('A');

@@ -157,12 +157,15 @@ function sweepCircleVsSegment(bx, by, vx, vy, r, side) {
   const wx = cx - r * nx;
   const wy = cy - r * ny;
 
-  // Project contact point onto segment to confirm it lies within the wall
+  // Project contact point onto segment to confirm it lies within the wall.
+  // Tolerance is BALL_RADIUS / side_length so corner vertices are never missed
+  // regardless of polygon shape (fixed 0.02 was too small for hexagons/pentagons).
   const sdx = side.p2.x - side.p1.x;
   const sdy = side.p2.y - side.p1.y;
   const lenSq = sdx * sdx + sdy * sdy;
   const tSeg = ((wx - side.p1.x) * sdx + (wy - side.p1.y) * sdy) / lenSq;
-  if (tSeg < -0.02 || tSeg > 1.02) return null;
+  const cornerTol = r / Math.sqrt(lenSq);
+  if (tSeg < -cornerTol || tSeg > 1 + cornerTol) return null;
 
   return { t: tClamped, tSeg: Math.max(0, Math.min(1, tSeg)) };
 }
@@ -392,26 +395,38 @@ function stepBall(ball, state, events) {
     }
   }
 
-  // ── Swept collision: find the earliest wall hit this tick ─────────────────
-  let earliest = null;
-  for (let si = 0; si < sides.length; si++) {
-    const hit = sweepCircleVsSegment(ball.x, ball.y, ball.vx, ball.vy, BALL_RADIUS, sides[si]);
-    if (hit !== null && (earliest === null || hit.t < earliest.t)) {
-      earliest = { ...hit, si };
-    }
-  }
+  // ── Multi-pass swept collision (up to 4 bounces per tick) ────────────────
+  // Iterating prevents the ball from clipping through adjacent walls when it
+  // hits near a corner: remaining motion after each reflection is re-checked
+  // rather than applied blindly.
+  let remainFrac = 1.0;
 
-  if (earliest === null) {
-    // No collision — free move
-    ball.x += ball.vx;
-    ball.y += ball.vy;
-  } else {
+  for (let pass = 0; pass < 4 && remainFrac > 0.001; pass++) {
+    const svx = ball.vx * remainFrac;
+    const svy = ball.vy * remainFrac;
+
+    let earliest = null;
+    for (let si = 0; si < sides.length; si++) {
+      const hit = sweepCircleVsSegment(ball.x, ball.y, svx, svy, BALL_RADIUS, sides[si]);
+      if (hit !== null && (earliest === null || hit.t < earliest.t)) {
+        earliest = { ...hit, si };
+      }
+    }
+
+    if (earliest === null) {
+      // No collision — consume remaining motion and exit
+      ball.x += svx;
+      ball.y += svy;
+      remainFrac = 0;
+      break;
+    }
+
     const side = sides[earliest.si];
-    const remainFrac = 1 - earliest.t;
 
     // Advance ball to the exact contact point
-    ball.x += ball.vx * earliest.t;
-    ball.y += ball.vy * earliest.t;
+    ball.x += svx * earliest.t;
+    ball.y += svy * earliest.t;
+    remainFrac *= (1 - earliest.t);
 
     if (side.playerIndex >= 0) {
       // ── Player wall ───────────────────────────────────────────────────────
@@ -444,14 +459,12 @@ function stepBall(ball, state, events) {
 
           if (chaosActive) chaosDirection(ball, state.currentSpeed, side.normal.x, side.normal.y);
 
-          // Continue remaining motion in new direction
-          ball.x += ball.vx * remainFrac;
-          ball.y += ball.vy * remainFrac;
-
           events.push({ type: 'paddle_hit', playerIndex: side.playerIndex, playerId, ballId: ball.id });
         } else {
           // ── Miss ──────────────────────────────────────────────────────────
           handleMiss(ball, state, side.playerIndex, playerId, events);
+          remainFrac = 0; // ball was reset — stop processing this step
+          break;
         }
       }
     } else {
@@ -461,12 +474,16 @@ function stepBall(ball, state, events) {
       ball.vy = ref.y;
       if (chaosActive) chaosDirection(ball, state.currentSpeed, side.normal.x, side.normal.y);
 
-      // Continue remaining motion in reflected direction
-      ball.x += ball.vx * remainFrac;
-      ball.y += ball.vy * remainFrac;
-
       events.push({ type: 'wall_bounce', ballId: ball.id });
     }
+  }
+
+  // Safety: if the ball somehow escaped the arena (no collision was caught),
+  // reset it silently without awarding a point.
+  const escapeDist = (ball.x - CENTER) ** 2 + (ball.y - CENTER) ** 2;
+  if (escapeDist > (POLYGON_RADIUS + BALL_RADIUS * 4) ** 2) {
+    resetBall(ball, state.baseSpeed, state.sides, state.paddles, state.players);
+    state.currentSpeed = state.baseSpeed;
   }
 
   if (ball.ghostTimer > 0) ball.ghostTimer -= 1000 / TICK_RATE;
