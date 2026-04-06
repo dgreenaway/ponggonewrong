@@ -3,7 +3,7 @@
 // ─── Constants ───────────────────────────────────────────────────────────────
 const CANVAS_SIZE = 800;
 const CENTER = CANVAS_SIZE / 2;
-const POLYGON_RADIUS = 320;
+const POLYGON_RADIUS = 352;
 const BALL_RADIUS = 8;
 const BASE_BALL_SPEED = 4.5;
 const TICK_RATE = 60;
