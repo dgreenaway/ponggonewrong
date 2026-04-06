@@ -482,7 +482,30 @@ socket.on('game_started', ({ boardConfig: bc, playerAssignments: pa, config: cfg
   Audio.init();
   Audio.resume();
   Audio.startMusic();
+  startCountdown();
 });
+
+function startCountdown() {
+  const overlay = document.getElementById('countdown-overlay');
+  const numEl   = document.getElementById('countdown-number');
+  const steps   = ['3', '2', '1', 'GO!'];
+  let i = 0;
+  overlay.classList.remove('hidden');
+  function showStep() {
+    numEl.textContent = steps[i];
+    // Force animation restart
+    numEl.style.animation = 'none';
+    void numEl.offsetWidth;
+    numEl.style.animation = '';
+    i++;
+    if (i < steps.length) {
+      setTimeout(showStep, 900);
+    } else {
+      setTimeout(() => overlay.classList.add('hidden'), 900);
+    }
+  }
+  showStep();
+}
 
 // ── Canvas & Renderer ─────────────────────────────────────────────────────────
 const canvas = document.getElementById('game-canvas');

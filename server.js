@@ -157,7 +157,7 @@ io.on('connection', (socket) => {
     const playerAssignments = room.players.map(p => ({ ...p }));
 
     io.to(room.code).emit('game_started', { boardConfig, playerAssignments, config: room.config });
-    startGameLoop(room);
+    setTimeout(() => startGameLoop(room), 3000);
   });
 
   socket.on('paddle_move', ({ direction }) => {
