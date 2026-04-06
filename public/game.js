@@ -546,9 +546,29 @@ window.addEventListener('blur', () => {
 });
 
 function sendPaddleInput() {
-  const left = keysDown.has('ArrowLeft') || keysDown.has('a') || keysDown.has('A');
+  const left  = keysDown.has('ArrowLeft')  || keysDown.has('a') || keysDown.has('A');
   const right = keysDown.has('ArrowRight') || keysDown.has('d') || keysDown.has('D');
-  const dir = right ? -1 : left ? 1 : 0;
+  const up    = keysDown.has('ArrowUp')    || keysDown.has('w') || keysDown.has('W');
+  const down  = keysDown.has('ArrowDown')  || keysDown.has('s') || keysDown.has('S');
+
+  let dir = 0;
+  if (boardConfig && myPlayerIndex >= 0) {
+    const mySide = boardConfig.sides.find(s => s.playerIndex === myPlayerIndex);
+    if (mySide) {
+      const dx = mySide.p2.x - mySide.p1.x;
+      const dy = mySide.p2.y - mySide.p1.y;
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        // Mostly horizontal wall — left/right keys, flip if segment runs right-to-left
+        const flip = dx < 0 ? -1 : 1;
+        dir = right ? flip : left ? -flip : 0;
+      } else {
+        // Mostly vertical wall — up/down keys, flip if segment runs bottom-to-top
+        const flip = dy < 0 ? -1 : 1;
+        dir = down ? flip : up ? -flip : 0;
+      }
+    }
+  }
+
   socket.emit('paddle_move', { direction: dir });
 }
 
