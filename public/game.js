@@ -483,6 +483,7 @@ socket.on('game_started', ({ boardConfig: bc, playerAssignments: pa, config: cfg
   Audio.resume();
   Audio.startMusic();
   startCountdown();
+  startInputPoll();
 });
 
 function startCountdown() {
@@ -568,27 +569,48 @@ window.addEventListener('blur', () => {
   sendPaddleInput();
 });
 
+// Re-send input on a fixed interval so a dropped event or focus loss
+// never permanently silences a player's controls.
+let inputPollInterval = null;
+function startInputPoll() {
+  if (inputPollInterval) return;
+  inputPollInterval = setInterval(sendPaddleInput, 100);
+}
+function stopInputPoll() {
+  clearInterval(inputPollInterval);
+  inputPollInterval = null;
+}
+
 function sendPaddleInput() {
   const left  = keysDown.has('ArrowLeft')  || keysDown.has('a') || keysDown.has('A');
   const right = keysDown.has('ArrowRight') || keysDown.has('d') || keysDown.has('D');
-  const up    = keysDown.has('ArrowUp')    || keysDown.has('w') || keysDown.has('W');
-  const down  = keysDown.has('ArrowDown')  || keysDown.has('s') || keysDown.has('S');
 
   let dir = 0;
   if (boardConfig && myPlayerIndex >= 0) {
     const mySide = boardConfig.sides.find(s => s.playerIndex === myPlayerIndex);
     if (mySide) {
+      // Inward normal: vector from wall midpoint toward arena centre
+      const cx = boardConfig.canvasSize / 2;
+      const cy = boardConfig.canvasSize / 2;
+      const mx = (mySide.p1.x + mySide.p2.x) / 2;
+      const my = (mySide.p1.y + mySide.p2.y) / 2;
+      const nd = Math.hypot(cx - mx, cy - my);
+      const nx = (cx - mx) / nd;
+      const ny = (cy - my) / nd;
+
+      // Player's "right" = 90° clockwise from their facing direction (inward normal)
+      // In screen coords (y-down): CW rotation of (nx,ny) = (-ny, nx)
+      const prx = -ny, pry = nx;
+
+      // Wall tangent (direction of increasing t)
       const dx = mySide.p2.x - mySide.p1.x;
       const dy = mySide.p2.y - mySide.p1.y;
-      if (Math.abs(dx) >= Math.abs(dy)) {
-        // Mostly horizontal wall — left/right keys, flip if segment runs right-to-left
-        const flip = dx < 0 ? -1 : 1;
-        dir = right ? flip : left ? -flip : 0;
-      } else {
-        // Mostly vertical wall — up/down keys, flip if segment runs bottom-to-top
-        const flip = dy < 0 ? -1 : 1;
-        dir = down ? flip : up ? -flip : 0;
-      }
+      const tlen = Math.hypot(dx, dy);
+      const tx = dx / tlen, ty = dy / tlen;
+
+      // If tangent aligns with player-right, increasing t is rightward; otherwise flip
+      const rightDir = (tx * prx + ty * pry) > 0 ? 1 : -1;
+      dir = right ? rightDir : left ? -rightDir : 0;
     }
   }
 
@@ -1050,6 +1072,7 @@ socket.on('modifier_activated', ({ type, emoji, label, duration }) => {
 let modifier_banner_timer = null;
 
 socket.on('game_over', ({ winnerId, finalScores }) => {
+  stopInputPoll();
   Audio.stopMusic();
   Audio.sfx.gameOver(winnerId === myId);
   clearTimeout(modifier_banner_timer);
