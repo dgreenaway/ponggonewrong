@@ -368,7 +368,8 @@ function updateStartButton(playerArr) {
 }
 
 document.getElementById('btn-copy-code').onclick = () => {
-  navigator.clipboard?.writeText(roomCode).then(() => showToast('Room code copied!'));
+  const url = `${location.origin}${location.pathname}?room=${roomCode}`;
+  navigator.clipboard?.writeText(url).then(() => showToast('Invite link copied!'));
 };
 
 document.getElementById('btn-start').onclick = () => {
@@ -1133,4 +1134,10 @@ document.getElementById('btn-play-again').onclick = () => {
 requestAnimationFrame(render);
 
 // ── Initial view ──────────────────────────────────────────────────────────────
-showView('view-landing');
+const _roomParam = new URLSearchParams(location.search).get('room');
+if (_roomParam) {
+  document.getElementById('join-code').value = _roomParam.toUpperCase().trim();
+  showView('view-join');
+} else {
+  showView('view-landing');
+}
