@@ -223,7 +223,6 @@ function createBall(speed, sides) {
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     lastHitPlayer: -1,
-    trail: [],
     ghostTimer: 0,
     curveTurn: 0,  // radians/tick applied when curve_ball is active
     curveTicks: 0, // counter for randomising curve direction
@@ -278,6 +277,7 @@ function createGameState(players, config) {
     paddles,
     scores,
     activeModifiers: [],
+    modSet: new Set(),
     pendingModifier: null,     // spawned but not yet hit
     modifierSpawnTimer: 0,
     modifierSpawnInterval: getModifierInterval(config),
@@ -317,12 +317,12 @@ function tick(state, deltaMs) {
 }
 
 function movePaddles(state) {
-  const { paddles, sides, config, activeModifiers } = state;
-  const reverseActive = activeModifiers.some(m => m.type === 'reverse_controls');
+  const { paddles, sides, config } = state;
+  const reverseActive = state.modSet.has('reverse_controls');
   const paddleLen = getEffectivePaddleLen(state);
   const speed = getPaddleSpeed(config);
 
-  for (const [, paddle] of Object.entries(paddles)) {
+  for (const paddle of Object.values(paddles)) {
     let dir = paddle.input;
     if (reverseActive) dir = -dir;
     if (paddle.boosted) dir *= 1.6;
@@ -339,26 +339,22 @@ function movePaddles(state) {
 
 function getEffectivePaddleLen(state) {
   const base = getPaddleLength(state.config);
-  const hasTiny = state.activeModifiers.some(m => m.type === 'tiny_paddles');
-  const hasMega = state.activeModifiers.some(m => m.type === 'mega_paddles');
-  if (hasTiny) return base * 0.5;
-  if (hasMega) return base * 1.75;
+  if (state.modSet.has('tiny_paddles')) return base * 0.5;
+  if (state.modSet.has('mega_paddles')) return base * 1.75;
   return base;
 }
 
 function getEffectiveSpeed(state) {
-  const hasSurge = state.activeModifiers.some(m => m.type === 'speed_surge');
-  const hasSlow = state.activeModifiers.some(m => m.type === 'slow_mo');
-  if (hasSurge) return state.currentSpeed * 2;
-  if (hasSlow) return state.currentSpeed * 0.5;
+  if (state.modSet.has('speed_surge')) return state.currentSpeed * 2;
+  if (state.modSet.has('slow_mo')) return state.currentSpeed * 0.5;
   return state.currentSpeed;
 }
 
 function stepBall(ball, state, events) {
   const { sides, paddles } = state;
   const speed = getEffectiveSpeed(state);
-  const chaosActive   = state.activeModifiers.some(m => m.type === 'chaos_ball');
-  const curveBallActive = state.activeModifiers.some(m => m.type === 'curve_ball');
+  const chaosActive     = state.modSet.has('chaos_ball');
+  const curveBallActive = state.modSet.has('curve_ball');
 
   // Normalise to current speed
   const mag = Math.hypot(ball.vx, ball.vy);
@@ -381,10 +377,6 @@ function stepBall(ball, state, events) {
     ball.vx = nvx;
     ball.vy = nvy;
   }
-
-  // Trail
-  ball.trail.push({ x: ball.x, y: ball.y });
-  if (ball.trail.length > 12) ball.trail.shift();
 
   // Modifier pickup (check against destination)
   if (state.pendingModifier) {
@@ -548,7 +540,6 @@ function resetBall(ball, speed, sides, paddles, players) {
   ball.vx = Math.cos(angle) * speed;
   ball.vy = Math.sin(angle) * speed;
   ball.lastHitPlayer = -1;
-  ball.trail = [];
   ball.curveTurn = 0;
   ball.curveTicks = 0;
 }
@@ -568,6 +559,7 @@ function updateModifiers(state, deltaMs, events) {
     }
     return true;
   });
+  state.modSet = new Set(state.activeModifiers.map(m => m.type));
 }
 
 function updateModifierSpawn(state, deltaMs, events) {
@@ -631,6 +623,7 @@ function activateModifier(state, def, events) {
   if (def.duration > 0) {
     state.activeModifiers = state.activeModifiers.filter(m => m.type !== def.type);
     state.activeModifiers.push(mod);
+    state.modSet = new Set(state.activeModifiers.map(m => m.type));
   }
 
   events.push({ type: 'modifier_activated', modType: def.type, emoji: def.emoji, label: def.label, duration: def.duration });
@@ -646,7 +639,7 @@ function serialise(state) {
     paddleData[pid] = { sideIndex: paddle.sideIndex, t: tc, a, b, playerIndex: paddle.playerIndex };
   }
 
-  const ghostActive = state.activeModifiers.some(m => m.type === 'ghost_ball');
+  const ghostActive = state.modSet.has('ghost_ball');
 
   return {
     tick: state.tick,
@@ -654,9 +647,6 @@ function serialise(state) {
       id: ball.id,
       x: ball.x,
       y: ball.y,
-      vx: ball.vx,
-      vy: ball.vy,
-      trail: ball.trail,
       ghost: ghostActive,
     })),
     paddles: paddleData,

@@ -14,6 +14,33 @@ let playerAssignments = [];
 let lastGameState = null;
 let myPlayerIndex = -1;
 
+// ── Paddle input direction (cached at game start) ─────────────────────────────
+let cachedRightDir = 1;
+
+function cacheMyPaddleDir() {
+  if (!boardConfig || myPlayerIndex < 0) return;
+  const mySide = boardConfig.sides.find(s => s.playerIndex === myPlayerIndex);
+  if (!mySide) return;
+  const cx = boardConfig.canvasSize / 2;
+  const cy = boardConfig.canvasSize / 2;
+  const mx = (mySide.p1.x + mySide.p2.x) / 2;
+  const my = (mySide.p1.y + mySide.p2.y) / 2;
+  const nd = Math.hypot(cx - mx, cy - my);
+  const nx = (cx - mx) / nd;
+  const ny = (cy - my) / nd;
+  const prx = -ny, pry = nx;
+  const dx = mySide.p2.x - mySide.p1.x;
+  const dy = mySide.p2.y - mySide.p1.y;
+  const tlen = Math.hypot(dx, dy);
+  cachedRightDir = ((dx / tlen) * prx + (dy / tlen) * pry) > 0 ? 1 : -1;
+}
+
+// ── Ball interpolation + client-side trail ────────────────────────────────────
+const clientTrails = {};   // ballId -> [{x,y}, ...]
+let prevBallPositions = {}; // ballId -> {x, y} from the state before last
+let lastStateTime = 0;
+const BROADCAST_INTERVAL = 1000 / 30; // matches server 30hz broadcast
+
 // ── Audio Engine ──────────────────────────────────────────────────────────────
 const Audio = (() => {
   let ctx = null;
@@ -52,6 +79,8 @@ const Audio = (() => {
     1, 0, 1, 0,  1, 0, 1, 0,  1, 0, 1, 0,  1, 0, 1, 0,
   ];
 
+  let noiseBuffer = null;
+
   function init() {
     if (ctx) return;
     ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -64,6 +93,14 @@ const Audio = (() => {
     sfxGain = ctx.createGain();
     sfxGain.gain.value = 0.9;
     sfxGain.connect(ctx.destination);
+
+    // Pre-bake a shared noise buffer (0.5s of white noise).
+    // BufferSource nodes are one-shot but the underlying buffer is reusable,
+    // so we fill it once here instead of allocating + filling on every drum hit.
+    const noiseLen = Math.ceil(ctx.sampleRate * 0.5);
+    noiseBuffer = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
+    const nd = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < noiseLen; i++) nd[i] = Math.random() * 2 - 1;
   }
 
   function resume() {
@@ -86,19 +123,15 @@ const Audio = (() => {
   }
 
   function noise(startT, dur, peakGain, filterType, filterFreq, dest) {
-    const len = Math.ceil(ctx.sampleRate * dur);
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     const src = ctx.createBufferSource();
-    src.buffer = buf;
+    src.buffer = noiseBuffer; // reuse pre-baked buffer
     const f = ctx.createBiquadFilter();
     f.type = filterType; f.frequency.value = filterFreq;
     const g = ctx.createGain();
     g.gain.setValueAtTime(peakGain, startT);
     g.gain.exponentialRampToValueAtTime(0.001, startT + dur);
     src.connect(f); f.connect(g); g.connect(dest);
-    src.start(startT);
+    src.start(startT); src.stop(startT + dur + 0.01);
   }
 
   // ── Music sequencer ─────────────────────────────────────────────────────────
@@ -481,6 +514,7 @@ socket.on('game_started', ({ boardConfig: bc, playerAssignments: pa, config: cfg
   playerAssignments = pa;
   config = cfg;
   myPlayerIndex = pa.findIndex(p => p.id === myId);
+  cacheMyPaddleDir();
   initCanvas();
   showView('view-game');
   canvas.focus();
@@ -589,36 +623,7 @@ function stopInputPoll() {
 function sendPaddleInput() {
   const left  = keysDown.has('ArrowLeft')  || keysDown.has('a') || keysDown.has('A');
   const right = keysDown.has('ArrowRight') || keysDown.has('d') || keysDown.has('D');
-
-  let dir = 0;
-  if (boardConfig && myPlayerIndex >= 0) {
-    const mySide = boardConfig.sides.find(s => s.playerIndex === myPlayerIndex);
-    if (mySide) {
-      // Inward normal: vector from wall midpoint toward arena centre
-      const cx = boardConfig.canvasSize / 2;
-      const cy = boardConfig.canvasSize / 2;
-      const mx = (mySide.p1.x + mySide.p2.x) / 2;
-      const my = (mySide.p1.y + mySide.p2.y) / 2;
-      const nd = Math.hypot(cx - mx, cy - my);
-      const nx = (cx - mx) / nd;
-      const ny = (cy - my) / nd;
-
-      // Player's "right" = 90° clockwise from their facing direction (inward normal)
-      // In screen coords (y-down): CW rotation of (nx,ny) = (-ny, nx)
-      const prx = -ny, pry = nx;
-
-      // Wall tangent (direction of increasing t)
-      const dx = mySide.p2.x - mySide.p1.x;
-      const dy = mySide.p2.y - mySide.p1.y;
-      const tlen = Math.hypot(dx, dy);
-      const tx = dx / tlen, ty = dy / tlen;
-
-      // If tangent aligns with player-right, increasing t is rightward; otherwise flip
-      const rightDir = (tx * prx + ty * pry) > 0 ? 1 : -1;
-      dir = right ? rightDir : left ? -rightDir : 0;
-    }
-  }
-
+  const dir = right ? cachedRightDir : left ? -cachedRightDir : 0;
   socket.emit('paddle_move', { direction: dir });
 }
 
@@ -661,17 +666,18 @@ function updateParticles() {
 }
 
 function drawParticles() {
+  if (particles.length === 0) return;
+  ctx.shadowBlur = 8;
   for (const p of particles) {
-    ctx.save();
     ctx.globalAlpha = p.life;
-    ctx.shadowBlur = 8;
     ctx.shadowColor = p.color;
     ctx.fillStyle = p.color;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
   }
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
 }
 
 // ── Score popups ──────────────────────────────────────────────────────────────
@@ -730,8 +736,9 @@ function render(now) {
 
   const s = scaleFactor;
   const mods = renderState?.activeModifiers ?? [];
-  const rotaryActive = mods.some(m => m.type === 'rotary');
-  const fireworksActive = mods.some(m => m.type === 'fireworks');
+  const modTypes = new Set(mods.map(m => m.type));
+  const rotaryActive = modTypes.has('rotary');
+  const fireworksActive = modTypes.has('fireworks');
 
   // Background
   ctx.fillStyle = '#050510';
@@ -857,33 +864,44 @@ function drawPolygon(s) {
 // ── Draw balls ────────────────────────────────────────────────────────────────
 function drawBalls(s) {
   if (!renderState) return;
+
+  // Interpolation alpha: how far we are between the previous and current server state
+  const alpha = Math.min(1, (performance.now() - lastStateTime) / BROADCAST_INTERVAL);
+
   renderState.balls.forEach(ball => {
     if (ball.ghost && Math.floor(Date.now() / 150) % 2 === 0) return;
 
-    // Trail
-    ball.trail.forEach((pt, i) => {
-      const alpha = (i / ball.trail.length) * 0.5;
-      const r = (2 + (i / ball.trail.length) * 5) * s;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#ffffff';
+    // Interpolate ball position for smooth 60fps rendering at 30hz updates
+    const prev = prevBallPositions[ball.id];
+    const bx = prev ? prev.x + (ball.x - prev.x) * alpha : ball.x;
+    const by = prev ? prev.y + (ball.y - prev.y) * alpha : ball.y;
+
+    // Trail (client-side, batched — no save/restore per point)
+    const trail = clientTrails[ball.id];
+    if (trail && trail.length > 0) {
       ctx.shadowBlur = 12;
       ctx.shadowColor = '#aaddff';
-      ctx.beginPath();
-      ctx.arc(pt.x * s, pt.y * s, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    });
+      ctx.fillStyle = '#ffffff';
+      for (let i = 0; i < trail.length; i++) {
+        const pt = trail[i];
+        ctx.globalAlpha = (i / trail.length) * 0.5;
+        ctx.beginPath();
+        ctx.arc(pt.x * s, pt.y * s, (2 + (i / trail.length) * 5) * s, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
 
     // Ball
-    ctx.save();
     ctx.shadowBlur = 24;
     ctx.shadowColor = '#ffffff';
     ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 1;
     ctx.beginPath();
-    ctx.arc(ball.x * s, ball.y * s, 8 * s, 0, Math.PI * 2);
+    ctx.arc(bx * s, by * s, 8 * s, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
+    ctx.shadowBlur = 0;
   });
 }
 
@@ -1005,6 +1023,25 @@ function drawModifierCountdown(s) {
 
 // ── Socket events — game ──────────────────────────────────────────────────────
 socket.on('game_state', (state) => {
+  // Snapshot previous positions for interpolation
+  prevBallPositions = {};
+  if (renderState) {
+    for (const b of renderState.balls) prevBallPositions[b.id] = { x: b.x, y: b.y };
+  }
+  lastStateTime = performance.now();
+
+  // Update client-side trails
+  const activeBallIds = new Set();
+  for (const ball of state.balls) {
+    activeBallIds.add(ball.id);
+    if (!clientTrails[ball.id]) clientTrails[ball.id] = [];
+    clientTrails[ball.id].push({ x: ball.x, y: ball.y });
+    if (clientTrails[ball.id].length > 12) clientTrails[ball.id].shift();
+  }
+  for (const id in clientTrails) {
+    if (!activeBallIds.has(+id)) delete clientTrails[id];
+  }
+
   renderState = state;
 });
 

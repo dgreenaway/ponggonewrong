@@ -67,11 +67,15 @@ function findRoomByPlayer(socketId) {
 function startGameLoop(room) {
   const INTERVAL_MS = 1000 / TICK_RATE;
   room.gameState = createGameState(room.players, room.config);
+  let tickCount = 0;
   room.gameLoop = setInterval(() => {
+    tickCount++;
     const events = tick(room.gameState, INTERVAL_MS);
-    const state = serialise(room.gameState);
 
-    io.to(room.code).emit('game_state', state);
+    // Physics runs at 60hz; state broadcast runs at 30hz
+    if (tickCount % 2 === 0) {
+      io.to(room.code).emit('game_state', serialise(room.gameState));
+    }
 
     for (const ev of events) {
       switch (ev.type) {
