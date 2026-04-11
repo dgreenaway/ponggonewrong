@@ -136,6 +136,18 @@ io.on('connection', (socket) => {
     console.log(`${name} joined ${code}`);
   });
 
+  socket.on('kick_player', ({ playerId }) => {
+    const room = findRoomByPlayer(socket.id);
+    if (!room || room.hostId !== socket.id) return;
+    if (playerId === socket.id) return; // can't kick yourself
+    const idx = room.players.findIndex(p => p.id === playerId);
+    if (idx < 0) return;
+    room.players.splice(idx, 1);
+    io.to(playerId).emit('kicked');
+    io.to(room.code).emit('player_joined', { players: room.players });
+    console.log(`Player ${playerId} kicked from ${room.code}`);
+  });
+
   socket.on('update_config', (config) => {
     const room = findRoomByPlayer(socket.id);
     if (!room || room.hostId !== socket.id) return;

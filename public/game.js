@@ -300,13 +300,17 @@ function renderPlayerList(playerArr) {
     const dot = document.createElement('span');
     dot.className = 'player-dot';
     dot.style.background = p.color;
-    dot.style.color = p.color;
     li.appendChild(dot);
     const name = document.createElement('span');
     name.textContent = p.name;
     li.appendChild(name);
-    if (p.id === roomCode ? false : false) {} // placeholder
-    // host badge handled below
+    if (isHost && p.id !== myId) {
+      const btn = document.createElement('button');
+      btn.className = 'kick-btn';
+      btn.textContent = 'Kick';
+      btn.onclick = () => socket.emit('kick_player', { playerId: p.id });
+      li.appendChild(btn);
+    }
     li.dataset.pid = p.id;
     list.appendChild(li);
   });
@@ -1099,6 +1103,15 @@ socket.on('game_over', ({ winnerId, finalScores }) => {
   spawnRingBurst(400, 400, winColor, 60);
 
   showView('view-gameover');
+});
+
+socket.on('kicked', () => {
+  roomCode = null;
+  myId = null;
+  isHost = false;
+  players = [];
+  showView('view-home');
+  showToast('You were kicked from the lobby.');
 });
 
 socket.on('spectating', ({ roomCode: code, players: pl }) => {

@@ -210,6 +210,7 @@ html, body {
 #player-list li {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px;
+
   background: rgba(255,255,255,0.04);
   border-radius: 4px;
   font-size: 0.95rem;
@@ -222,6 +223,24 @@ html, body {
 .player-host-badge {
   font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--yellow); margin-left: auto; opacity: 0.8;
+}
+.kick-btn {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: transparent;
+  border: 1px solid #ff006e55;
+  color: #ff006e;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.kick-btn:hover {
+  background: #ff006e22;
+  border-color: #ff006e;
 }
 
 .config-grid {
